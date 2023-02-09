@@ -17,7 +17,7 @@ use std::net;
 
 type VecSocketAddr = Vec<std::net::SocketAddr>;
 
-const DEFAULT_PORT: u16 = 8333;
+const DEFAULT_PORT_MAINNET: u16 = 8333;
 const DEFAULT_DNS_SEEDS: &'static [&'static str] = &[
     "seed.bitcoin.sipa.be.",
     "dnsseed.bluematt.me.",
@@ -32,13 +32,13 @@ const DEFAULT_DNS_SEEDS: &'static [&'static str] = &[
 
 #[derive(Debug)]
 pub struct DnsSeedManager {
-    seeds: Vec<std::net::SocketAddr>,
+    pub seeds: Vec<std::net::SocketAddr>,
 }
 
 impl Default for DnsSeedManager {
     fn default() -> Self {
         Self { 
-            seeds: DnsSeedManager::lookup_dns_seeds(&DEFAULT_DNS_SEEDS, DEFAULT_PORT)
+            seeds: DnsSeedManager::lookup_dns_seeds(&DEFAULT_DNS_SEEDS, DEFAULT_PORT_MAINNET)
         }
     }
 }
@@ -60,7 +60,7 @@ impl DnsSeedManager {
 
     pub async fn new_with_default_dns_seeds() -> Self {
         let mut dsm = DnsSeedManager::new();
-        let dns_seed_addr = (DEFAULT_DNS_SEEDS[0], DEFAULT_PORT);
+        let dns_seed_addr = (DEFAULT_DNS_SEEDS[0], DEFAULT_PORT_MAINNET);
         match tokio::net::lookup_host(dns_seed_addr).await {
             Ok(addr) => {
                 dsm.seeds.extend(addr.collect::<Vec<std::net::SocketAddr>>());
