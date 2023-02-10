@@ -44,20 +44,23 @@ impl Default for DnsSeedManager {
 }
 
 impl DnsSeedManager {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self {
             seeds: Vec::new(),
         }
     }
 
+    #[allow(dead_code)]
     pub fn ip_count(&self) -> usize {
         self.seeds.len()
     }
-
+    
     pub fn get(&self, i: usize) -> Option<&net::SocketAddr> {
         self.seeds.get(i)
     }
-
+    
+    #[allow(dead_code)]
     pub async fn new_with_default_dns_seeds() -> Self {
         let mut dsm = DnsSeedManager::new();
         let dns_seed_addr = (DEFAULT_DNS_SEEDS[0], DEFAULT_PORT_MAINNET);
