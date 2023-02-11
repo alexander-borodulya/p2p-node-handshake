@@ -1,13 +1,10 @@
-mod constants;
-mod dns_seed_mananger;
-mod handshake_manager;
-mod network_messages;
-
-use crate::dns_seed_mananger::DnsSeedManager;
-use crate::handshake_manager::HandshakeManager;
+use p2p_node_handshake::DnsSeedManager;
+use p2p_node_handshake::HandshakeManager;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let dsm = DnsSeedManager::default();
     let mut handshake_manager = HandshakeManager::default();
 
@@ -18,13 +15,11 @@ async fn main() {
             Ok(()) => {
                 println!("Handshake with remote peer established: {:?}", remote);
                 break;
-            }
+            },
             Err(e) => {
-                println!(
-                    "Handshake with remote peer {:?} failed with error: {:?}",
-                    remote, e
-                );
-            }
+                println!("Handshake with remote peer {remote:?} failed with error: {e:?}");
+                log::error!("\nError report:\n{:?}", e);
+            },
         }
     }
 }
