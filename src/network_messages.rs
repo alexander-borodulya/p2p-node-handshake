@@ -1,11 +1,19 @@
-use std::net;
-use bitcoin::network::{message::{NetworkMessage, RawNetworkMessage}, constants::ServiceFlags, Address, message_network::VersionMessage};
+use bitcoin::network::{
+    constants::ServiceFlags,
+    message::{NetworkMessage, RawNetworkMessage},
+    message_network::VersionMessage,
+    Address,
+};
 use rand::Rng;
+use std::net;
 
 use crate::constants;
 
 /// Builds and returns a version message
-pub fn new_version_message(local_peer: net::SocketAddr, remote_peer: net::SocketAddr) -> NetworkMessage {
+pub fn new_version_message(
+    local_peer: net::SocketAddr,
+    remote_peer: net::SocketAddr,
+) -> NetworkMessage {
     const SERVICES: ServiceFlags = ServiceFlags::NONE;
 
     let timestamp = chrono::Utc::now().timestamp();
@@ -32,10 +40,22 @@ pub fn new_version_message(local_peer: net::SocketAddr, remote_peer: net::Socket
 }
 
 /// Make RawVersion message and serealize it
-pub fn new_version_message_serialised(local_peer: net::SocketAddr, remote_peer: net::SocketAddr) -> Vec<u8> {
+pub fn new_version_message_serialised(
+    local_peer: net::SocketAddr,
+    remote_peer: net::SocketAddr,
+) -> Vec<u8> {
     let version_message_local_raw = RawNetworkMessage {
         magic: bitcoin::Network::Bitcoin.magic(),
         payload: new_version_message(local_peer, remote_peer),
-    };   
+    };
     bitcoin::consensus::encode::serialize(&version_message_local_raw)
+}
+
+pub fn make_verack_message_serialised() -> Vec<u8> {
+    let message_verack_local = NetworkMessage::Verack;
+    let message_verack_local_raw = RawNetworkMessage {
+        magic: bitcoin::Network::Bitcoin.magic(),
+        payload: message_verack_local,
+    };
+    bitcoin::consensus::encode::serialize(&message_verack_local_raw)
 }
