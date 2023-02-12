@@ -4,7 +4,8 @@ use std::{
     net::{SocketAddr, TcpStream}, fmt, error::Error,
 };
 
-use bitcoin::{consensus::Decodable, network::message::RawNetworkMessage};
+use bitcoin::{consensus::Decodable, network::message::{RawNetworkMessage, NetworkMessage}};
+use log::{info, error};
 use tokio::time::timeout;
 
 use error_stack::{
@@ -15,20 +16,6 @@ use error_stack::{
 };
 
 use crate::network_messages;
-
-#[derive(Debug)]
-pub enum HandshakeStatus {
-    /// Remote peer correctly responded to the handshake.
-    Completed,
-
-    /// Remote peer did not respond to the handshake in specified timeout.
-    Timeout,
-
-    /// Error occurred during handshake.
-    Failed,
-}
-
-pub type HandshakeResult = Result<(), std::io::Error>;
 
 /// Top level handshake error
 #[derive(Debug)]
@@ -78,13 +65,37 @@ impl fmt::Display for HandshakeMessageExchangeError {
 
 impl Error for HandshakeMessageExchangeError {}
 
+/// Handshake Message Wrong Protocol Error
+#[derive(Debug)]
+struct HandshakeMessageWrongProtocolError;
+
+impl fmt::Display for HandshakeMessageWrongProtocolError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Handshake message wrong protocol error: Main handshake function failed to send message")
+    }
+}
+
+impl Error for HandshakeMessageWrongProtocolError {}
+
+/// Handshake Message VerAck Error
+#[derive(Debug)]
+struct HandshakeMessageVerAckError;
+
+impl fmt::Display for HandshakeMessageVerAckError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Handshake message verack error: Main handshake function failed to send message")
+    }
+}
+
+impl Error for HandshakeMessageVerAckError {}
 
 /// HandshakeManager - provides handshake functionality. Tracks the status of a handshake by `remote` SocketAddr.
 pub struct HandshakeManager {
     timeout_ms: u64,
-    statuses: HashMap<SocketAddr, HandshakeResult>,
+    statuses: HashMap<SocketAddr, bool>,
 }
 
+/// Default trait implementation for `HandshakeManager`
 impl Default for HandshakeManager {
     fn default() -> Self {
         Self {
@@ -95,7 +106,10 @@ impl Default for HandshakeManager {
 }
 
 impl HandshakeManager {
-    pub async fn do_handshake(&mut self, remote: SocketAddr) -> Result<(), HandshakeError> {
+    
+    /// Perform a handshake with a `remote` SocketAddr.
+    /// Returns `true` if the handshake was successful, `false` otherwise.
+    pub async fn establish_handshake(&mut self, remote: SocketAddr) -> Result<bool, HandshakeError> {
         // 1. Spawn a new task the performs the message exchange
         let handshake_jh = tokio::spawn(async move { exec_handshake(remote).await });
 
@@ -105,6 +119,7 @@ impl HandshakeManager {
             handshake_jh,
         ).await;
 
+        // Handle Timeout result
         let jh_result = timeout_result
             .into_report()
             .change_context(HandshakeError)
@@ -123,18 +138,37 @@ impl HandshakeManager {
            .attach_printable_lazy(|| format!("Handshake message exchange failed"))
            .change_context(HandshakeError)?;
 
-        // 3. Evaluate the handshake status
-        match hs_status {
-            HandshakeStatus::Completed => Ok(()),
-            HandshakeStatus::Timeout => Err(Report::new(HandshakeError)
-                .attach_printable(format!("Handshake timed out after {}ms", self.timeout_ms))),
-            HandshakeStatus::Failed => Err(Report::new(HandshakeError)
-                .attach_printable(format!("Handshake failed"))),
+        Ok(hs_status)
+    }
+
+    /// Adde record entry to the handshake statuses
+    pub fn record_handshake(&mut self, remote: SocketAddr, status: bool) {
+        self.statuses.insert(remote, status);
+    }
+
+    /// Print all recorded handshake statuses into the terminal
+    pub fn print_statuses(&self) {
+        for (addr, status) in self.statuses.iter() {
+            info!("Remote peer: {}, handshake status: {}", addr, status);
         }
     }
 }
 
-async fn exec_handshake(remote: SocketAddr) -> Result<HandshakeStatus, HandshakeMessageExchangeError> {
+/// Implements version handshake protocol as follows:
+/// 
+/// =============================================================================
+/// 
+///        L -> R: Send version message with the local peer's version
+///        R -> L: Send version message back
+///        R -> L: Send verack message
+/// [TODO] R:      Sets version to the minimum of the 2 versions
+///        L -> R: Send verack message after receiving version message from R
+/// [TODO] L:      Sets version to the minimum of the 2 versions
+/// 
+/// =============================================================================
+/// 
+/// Returns result that indicates if the handshake was successful or not
+async fn exec_handshake(remote: SocketAddr) -> Result<bool, HandshakeMessageExchangeError> {
     match TcpStream::connect(remote) {
         Ok(mut stream) => {
             let read_stream = stream.try_clone()
@@ -152,7 +186,8 @@ async fn exec_handshake(remote: SocketAddr) -> Result<HandshakeStatus, Handshake
                .change_context(HandshakeMessageExchangeError)?;
 
             // Make and send Version message
-            let version_message_bytes = network_messages::new_version_message_serialised(local_peer, remote_peer);
+            let (protocol_version_local, version_message_bytes) = network_messages::new_version_message_serialised(local_peer, remote_peer);
+            info!("send version message {protocol_version_local} to {remote}");
             stream.write_all(version_message_bytes.as_slice())
                .into_report()
                .attach_printable_lazy(|| format!("Failed to send Version message"))
@@ -164,8 +199,14 @@ async fn exec_handshake(remote: SocketAddr) -> Result<HandshakeStatus, Handshake
                 .attach_printable_lazy(|| format!("Failed to receive and decode Version message from the remote peer"))
                 .change_context(HandshakeMessageExchangeError)?;
             let message_version_remote = message_version_remote.payload;
-
-            println!("RECV: Remote VERSION: {:?}", message_version_remote);
+            
+            let protocol_version_remote = match message_version_remote {
+                NetworkMessage::Version(protocol_version_remote) => protocol_version_remote.version,
+                _ => return Err(Report::new(HandshakeMessageWrongProtocolError)
+                        .attach_printable(format!("Received unexpected protocol version: {:?}", message_version_remote)))
+                        .change_context(HandshakeMessageExchangeError)
+            };
+            info!("recv version message {protocol_version_remote} from {remote}");
 
             // Make and send VerAck message to the remote peer
             let message_verack_bytes = network_messages::make_verack_message_serialised();
@@ -174,21 +215,30 @@ async fn exec_handshake(remote: SocketAddr) -> Result<HandshakeStatus, Handshake
                 .into_report()
                 .attach_printable_lazy(|| format!("Failed to send VerAck message to the remote peer"))
                 .change_context(HandshakeMessageExchangeError)?;
+            info!("sent VerAck message to {remote}");
 
             // Wait for the VerAck message from the remote peer
             let message_verack_remote = RawNetworkMessage::consensus_decode(&mut stream_reader)
                .into_report()
                .attach_printable_lazy(|| format!("Failed to receive and decode VerAck message from the remote peer"))
                .change_context(HandshakeMessageExchangeError)?;
-            let message_verack_remote = message_verack_remote.payload;
 
-            println!("RECV: Remote Verack: {:?}", message_verack_remote);
+            let message_verack_remote = match message_verack_remote.payload {
+                NetworkMessage::Verack => message_verack_remote.payload,
+                _ => {
+                    error!("Received unexpected message, but expected VerAck message: {:?}", message_verack_remote.payload);
+                    return Err(Report::new(HandshakeMessageVerAckError)
+                    .attach_printable(format!("Received unexpected message, but expected VerAck message: {:?}", message_verack_remote.payload)))
+                    .change_context(HandshakeMessageExchangeError)
+                }
+            };
+
+            info!("recv VerAck message from {remote}: {message_verack_remote:?}");
         },
         Err(e) => {
             return Err(Report::new(HandshakeMessageExchangeError)
                .attach_printable(format!("Failed to connect to node: {:?}, error: {:?}", remote, e)));
         }
     }
-
-    Ok(HandshakeStatus::Completed)
+    Ok(true)
 }
