@@ -3,19 +3,18 @@
 /// Predefined DNS seed taken from:
 ///     https://github.com/bitcoin/bitcoin/blob/v24.0.1/src/chainparams.cpp#L123
 ///
-/// "seed.bitcoin.sipa.be."          
-/// "dnsseed.bluematt.me."           
-/// "dnsseed.bitcoin.dashjr.org."    
-/// "seed.bitcoinstats.com."         
-/// "seed.bitcoin.jonasschnelli.ch." 
-/// "seed.btc.petertodd.org."        
-/// "seed.bitcoin.sprovoost.nl."     
-/// "dnsseed.emzy.de."               
-/// "seed.bitcoin.wiz.biz."          
-///
+///     "seed.bitcoin.sipa.be."          
+///     "dnsseed.bluematt.me."           
+///     "dnsseed.bitcoin.dashjr.org."    
+///     "seed.bitcoinstats.com."         
+///     "seed.bitcoin.jonasschnelli.ch." 
+///     "seed.btc.petertodd.org."        
+///     "seed.bitcoin.sprovoost.nl."     
+///     "dnsseed.emzy.de."               
+///     "seed.bitcoin.wiz.biz."          
 use std::net;
 
-use error_stack::{IntoReport, Result, ResultExt};
+use error_stack::{IntoReport, Result, ResultExt, Report};
 
 type VecSocketAddr = Vec<std::net::SocketAddr>;
 
@@ -66,6 +65,13 @@ impl DnsSeedManager {
         Self { seeds: Vec::new() }
     }
 
+    pub async fn new_with_dns_index(i: usize) -> Result<Self, DnsLookupError> {
+        let Some(dns_url) = DnsSeedManager::dns_seed_at_index(i) else {
+            return Err(Report::from(DnsLookupError).attach_printable(format!("Bad DNS seed index: {}", i)));
+        };
+        DnsSeedManager::new_with_dns(&dns_url).await
+    }
+
     pub async fn new_with_dns(dns: &str) -> Result<Self, DnsLookupError> {
         let mut dsm = DnsSeedManager::new();
         let dns_seed_addr = (dns, DEFAULT_PORT_MAINNET);
@@ -79,17 +85,25 @@ impl DnsSeedManager {
         Ok(dsm)
     }
 
-    pub fn dns_seeds_count() -> usize {
-        DEFAULT_DNS_SEEDS.len()
+    pub fn default_dns_seeds() -> &'static [&'static str] {
+        DEFAULT_DNS_SEEDS
+    }
+
+    pub fn print_default_dns_seeds() {
+        for (i, s) in DnsSeedManager::default_dns_seeds().iter().enumerate() {
+            println!("{}: {}", i, s);
+        }
+    }
+
+    pub fn print_resolved_remote_urls(&self) {
+        for (i, s) in self.seeds.iter().enumerate() {
+            println!("{}: {}", i, s);
+        }
     }
 
     pub fn dns_seed_at_index(i: usize) -> Option<&'static &'static str> {
         let o = DEFAULT_DNS_SEEDS.get(i);
         o
-    }
-
-    pub fn ip_count(&self) -> usize {
-        self.seeds.len()
     }
 
     pub fn get(&self, i: usize) -> Option<&net::SocketAddr> {

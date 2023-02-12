@@ -147,7 +147,7 @@ impl HandshakeManager {
     }
 
     /// Print all recorded handshake statuses into the terminal
-    pub fn print_statuses(&self) {
+    pub fn _print_statuses(&self) {
         for (addr, status) in self.statuses.iter() {
             info!("Remote peer: {}, handshake status: {}", addr, status);
         }
@@ -158,12 +158,12 @@ impl HandshakeManager {
 /// 
 /// =============================================================================
 /// 
-///        L -> R: Send version message with the local peer's version
-///        R -> L: Send version message back
-///        R -> L: Send verack message
-/// [TODO] R:      Sets version to the minimum of the 2 versions
-///        L -> R: Send verack message after receiving version message from R
-/// [TODO] L:      Sets version to the minimum of the 2 versions
+///     L -> R: Send version message with the local peer's version
+///     R -> L: Send version message back
+///     R -> L: Send verack message
+///     R:      Sets version to the minimum of the 2 versions
+///     L -> R: Send verack message after receiving version message from R
+///     L:      Sets version to the minimum of the 2 versions
 /// 
 /// =============================================================================
 /// 
