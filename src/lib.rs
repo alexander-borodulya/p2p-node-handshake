@@ -4,10 +4,10 @@ mod dns_seed_mananger;
 mod handshake_manager;
 mod network_messages;
 
-// For external usage
-pub use config::Config;
+// For the external usage
 pub use config::run;
+pub use config::Config;
 
-// For internal usage
+// For the internal usage
 use dns_seed_mananger::DnsSeedManager;
 use handshake_manager::HandshakeManager;

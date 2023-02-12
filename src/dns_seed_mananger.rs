@@ -7,14 +7,14 @@
 ///     "dnsseed.bluematt.me."           
 ///     "dnsseed.bitcoin.dashjr.org."    
 ///     "seed.bitcoinstats.com."         
-///     "seed.bitcoin.jonasschnelli.ch." 
+///     "seed.bitcoin.jonasschnelli.ch."
 ///     "seed.btc.petertodd.org."        
 ///     "seed.bitcoin.sprovoost.nl."     
 ///     "dnsseed.emzy.de."               
 ///     "seed.bitcoin.wiz.biz."          
 use std::net;
 
-use error_stack::{IntoReport, Result, ResultExt, Report};
+use error_stack::{IntoReport, Report, Result, ResultExt};
 
 type VecSocketAddr = Vec<std::net::SocketAddr>;
 
@@ -43,28 +43,32 @@ impl std::fmt::Display for DnsLookupError {
 
 impl std::error::Error for DnsLookupError {}
 
-/// DnsSeedManager contains a list of resolved IP addresses
+/// DnsSeedManager contains a list of resolved IP addresses of active nodes
 #[derive(Debug)]
 pub struct DnsSeedManager {
-    pub seeds: Vec<std::net::SocketAddr>,
+    pub active_nodes: Vec<std::net::SocketAddr>,
 }
 
 impl Default for DnsSeedManager {
     fn default() -> Self {
         Self {
-            seeds: DnsSeedManager::lookup_dns_seeds(
-                &DEFAULT_DNS_SEEDS, 
-                DEFAULT_PORT_MAINNET
+            active_nodes: DnsSeedManager::lookup_active_nodes(
+                &DEFAULT_DNS_SEEDS,
+                DEFAULT_PORT_MAINNET,
             ),
         }
     }
 }
 
 impl DnsSeedManager {
+    /// Construct a new DnsSeedManager
     pub fn new() -> Self {
-        Self { seeds: Vec::new() }
+        Self {
+            active_nodes: Vec::new(),
+        }
     }
 
+    /// Construct a new DnsSeedManager based on index of DNS seed URL
     pub async fn new_with_dns_index(i: usize) -> Result<Self, DnsLookupError> {
         let Some(dns_url) = DnsSeedManager::dns_seed_at_index(i) else {
             return Err(Report::from(DnsLookupError).attach_printable(format!("Bad DNS seed index: {}", i)));
@@ -72,45 +76,56 @@ impl DnsSeedManager {
         DnsSeedManager::new_with_dns(&dns_url).await
     }
 
+    /// Construct a new DnsSeedManager based on DNS seed URL represented as `&str`
     pub async fn new_with_dns(dns: &str) -> Result<Self, DnsLookupError> {
         let mut dsm = DnsSeedManager::new();
         let dns_seed_addr = (dns, DEFAULT_PORT_MAINNET);
 
-        let seeds = tokio::net::lookup_host(dns_seed_addr).await
+        let seeds = tokio::net::lookup_host(dns_seed_addr)
+            .await
             .into_report()
-            .attach_printable_lazy(|| format!("Failed to lookup dns seeds by URL {:?}", dns_seed_addr))
+            .attach_printable_lazy(|| {
+                format!("Failed to lookup dns seeds by URL {:?}", dns_seed_addr)
+            })
             .change_context(DnsLookupError)?;
 
-        dsm.seeds.extend(seeds.collect::<Vec<std::net::SocketAddr>>());
+        dsm.active_nodes
+            .extend(seeds.collect::<Vec<std::net::SocketAddr>>());
         Ok(dsm)
     }
 
+    /// Return the list of internal DNS seed URLs
     pub fn default_dns_seeds() -> &'static [&'static str] {
         DEFAULT_DNS_SEEDS
     }
 
+    /// Prints the list of internal DNS seed URLs
     pub fn print_default_dns_seeds() {
         for (i, s) in DnsSeedManager::default_dns_seeds().iter().enumerate() {
             println!("{}: {}", i, s);
         }
     }
 
+    /// Prints the list of IP addresses of active nodes
     pub fn print_resolved_remote_urls(&self) {
-        for (i, s) in self.seeds.iter().enumerate() {
+        for (i, s) in self.active_nodes.iter().enumerate() {
             println!("{}: {}", i, s);
         }
     }
 
+    /// Return DNS seed URL by given index
     pub fn dns_seed_at_index(i: usize) -> Option<&'static &'static str> {
         let o = DEFAULT_DNS_SEEDS.get(i);
         o
     }
 
+    /// Returns IP address of active node by given index
     pub fn get(&self, i: usize) -> Option<&net::SocketAddr> {
-        self.seeds.get(i)
+        self.active_nodes.get(i)
     }
 
-    fn lookup_dns_seeds(dns: &[&str], port: u16) -> VecSocketAddr {
+    /// Accepts a list of DNS look servers. Returns a vec or resolved IP addresses.
+    fn lookup_active_nodes(dns: &[&str], port: u16) -> VecSocketAddr {
         let mut v: Vec<std::net::SocketAddr> = Vec::new();
         for d in dns.iter() {
             let t = (*d, port);
