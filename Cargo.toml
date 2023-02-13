@@ -2,6 +2,8 @@
 name = "p2p-node-handshake"
 version = "0.1.0"
 edition = "2021"
+authors = ["Alexander Borodulya <alexander.borodulya@gmail.com>"]
+license = "MIT"
 
 [dependencies]
 
